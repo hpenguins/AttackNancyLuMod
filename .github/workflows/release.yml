@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CESIUM_LOADER_REF: modloader-2.9.1
+
+jobs:
+  build:
+    name: Build and package
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Prepare reference assemblies
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/fetch-refs.ps1 -CesiumLoaderRef $env:CESIUM_LOADER_REF
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}" -replace '^v', ''
+          } else {
+            $version = "manual-${{ github.run_number }}"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "version=$version"
+
+      - name: Verify sidecar version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -ne "tag") { Write-Host "手动构建, 跳过标签校验"; exit 0 }
+          $sidecar = Get-Content AttackNancyLuMod.json -Raw | ConvertFrom-Json
+          if ($sidecar.version -ne "${{ steps.version.outputs.version }}") {
+            throw "标签版本 ${{ steps.version.outputs.version }} 与 AttackNancyLuMod.json 的 version $($sidecar.version) 不一致"
+          }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet build source/AttackNancyLuMod.csproj -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          dotnet test tests/AttackNancyLuMod.Tests/AttackNancyLuMod.Tests.csproj -c Release --nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Stage package
+        shell: pwsh
+        run: |
+          $out = "source/bin/Release/netstandard2.0"
+          $stage = "staging/AttackNancyLuMod"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          foreach ($file in @("AttackNancyLuMod.dll", "AttackNancyLuMod.pdb")) {
+            $path = Join-Path $out $file
+            if (-not (Test-Path $path)) { throw "缺少构建产物: $path" }
+            Copy-Item $path $stage -Force
+          }
+          Copy-Item "AttackNancyLuMod.json" $stage -Force
+          if (Test-Path "config.json") {
+            Copy-Item "config.json" $stage -Force
+          }
+
+          $zip = "AttackNancyLuMod-${{ steps.version.outputs.version }}.zip"
+          Compress-Archive -Path staging/AttackNancyLuMod -DestinationPath $zip -CompressionLevel Optimal
+          Copy-Item $zip "AttackNancyLuMod.zip" -Force
+          Get-ChildItem *.zip | Select-Object Name, Length
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: attack-nancy-lu-package
+          path: AttackNancyLuMod*.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: attack-nancy-lu-package
+          path: artifacts
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 集火南希露 ${{ github.ref_name }}
+          files: artifacts/*.zip
+          fail_on_unmatched_files: true
+          body: |
+            ## 安装
+
+            1. 下载本页附件里的 `AttackNancyLuMod-<版本>.zip`（或固定地址 `AttackNancyLuMod.zip`）。
+            2. 解压到游戏 exe 目录下的 `AstralParty_ModLoader\mods\`，得到 `mods\AttackNancyLuMod\AttackNancyLuMod.dll`、`AttackNancyLuMod.json` 与 `config.json`。
+            3. 启动游戏。已有旧版本时覆盖更新即可。
+
+            需要 CesiumLoader（SDK 不低于 2.8.6）。卸载时删除 `mods\AttackNancyLuMod\` 目录。
+
+            ## 说明
+
+            - 在战斗中鼠标悬停在角色模型或顶部 HUD 头像上按下快捷键（默认 `X`），一键向全场广播「集火目标」标点。
+            - 支持怪物、敌方玩家、友方队友以及自己。
+            - 标点短语与头顶集火动画完全基于游戏原生标点协议，未安装模组的玩家也能正常看到。
+            - 同步解锁 PVP 模式标点系统限制，支持在 PVP 派对中完整使用标点系统。
+            - 配置位于 `mods\AttackNancyLuMod\config.json`，也可在 AstralParty.Toys 的模组配置页修改。
+            - 完整说明与配置项见仓库 [README](${{ github.server_url }}/${{ github.repository }}#readme)。
