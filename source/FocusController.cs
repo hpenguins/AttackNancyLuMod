@@ -188,8 +188,8 @@ namespace AttackNancyLuMod
             // PVP Shortcut Key Handling
             try
             {
-                KeyCode markKey = GameSettings.GetShortcutKey(GameShortcut.Mark);
-                if (markKey != KeyCode.None && InputService.IsKeyPressed(markKey))
+                var markKey = ReadMarkShortcutKey();
+                if (markKey.HasValue && markKey.Value != KeyCode.None && InputService.IsKeyPressed(markKey.Value))
                 {
                     var markMgr = BattleSceneController.inst?.MarkManager;
                     if (markMgr != null)
@@ -208,6 +208,43 @@ namespace AttackNancyLuMod
             catch
             {
                 // Ignore input handling exceptions
+            }
+        }
+
+        /// <summary>
+        /// 读取"进入标记模式"的快捷键。
+        ///
+        /// 游戏把快捷键枚举换过：旧版本是 <c>Core.GameShortcut</c>（成员 <c>Mark</c>），
+        /// 2026-11-12 热更后换成全局 <c>KeyboardType</c>（成员 <c>MarkMode</c>），
+        /// <c>GameSettings.GetShortcutKey</c> 的参数类型随之改变。直接写死枚举会让本程序集
+        /// 只能跑在一个游戏版本上（旧版本每帧抛 <c>Could not load type</c>），所以这里按名字反射取值，
+        /// 两个版本都能编译、都能取值。
+        /// </summary>
+        private static KeyCode? ReadMarkShortcutKey()
+        {
+            try
+            {
+                var method = typeof(GameSettings).GetMethod("GetShortcutKey", BindingFlags.Public | BindingFlags.Static);
+                if (method == null) return null;
+
+                var parameters = method.GetParameters();
+                if (parameters.Length != 1) return null;
+
+                var actionType = parameters[0].ParameterType;
+                if (!actionType.IsEnum) return null;
+
+                var names = Enum.GetNames(actionType);
+                var actionName = Array.IndexOf(names, "MarkMode") >= 0 ? "MarkMode"
+                               : Array.IndexOf(names, "Mark") >= 0 ? "Mark"
+                               : null;
+                if (actionName == null) return null;
+
+                var action = Enum.Parse(actionType, actionName);
+                return (KeyCode)method.Invoke(null, new[] { action });
+            }
+            catch
+            {
+                return null;
             }
         }
     }
