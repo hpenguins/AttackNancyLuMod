@@ -4,6 +4,7 @@ using CesiumLoader.SDK.Inputs;
 using Core;
 using Core.Mark;
 using Core.Scene;
+using Core.Unit;
 using FairyGUI;
 using GameLogic;
 using Tools;
@@ -20,6 +21,20 @@ namespace AttackNancyLuMod
 
         private static readonly FieldInfo BtnMapChatField = typeof(ExpressionWindow).GetField("_btn_MapChat", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo BtnMapToolField = typeof(ExpressionWindow).GetField("_btn_MapTool", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        /// <summary>
+        /// UIExpression_Com_ChatMenu 里绑定单个标点项的私有方法
+        /// （按钮, 悬浮高亮图, 图标纹理, 标点 ID, 目标 ID）：图标、悬浮提示与点击发送都在里面。
+        /// 取不到时退回 <see cref="WireMenuItemFallback"/>（只用公有成员）。
+        /// </summary>
+        private static readonly MethodInfo RefreshPlayerMenuItemMethod = typeof(UIExpression_Com_ChatMenu).GetMethod(
+            "RefreshPlayerMenuItem",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            new[] { typeof(UIExpression_Button_MenuItem), typeof(GImage), typeof(NTexture), typeof(int), typeof(long) },
+            null);
+
+        private bool _warnedWheelWiring;
 
         private readonly Action<string> _logInfo;
         private readonly Action<string> _logWarn;
@@ -48,6 +63,12 @@ namespace AttackNancyLuMod
 
             // 2. Shortcut Keys Detection
             CheckHotkeys(settings);
+
+            // 3. Native Mark Wheel Override
+            if (settings.OverrideWheel)
+            {
+                ApplyWheelOverride(settings);
+            }
         }
 
         private void CheckHotkeys(AttackNancyLuSettings settings)
@@ -74,6 +95,150 @@ namespace AttackNancyLuMod
             if (DispatchMark(targetId, markId, settings))
             {
                 _logInfo?.Invoke($"[{actionName}] 标点已触发: 目标 ID={targetId}");
+            }
+        }
+
+        /// <summary>
+        /// 把原生标点轮盘的「玩家页」改写成「小心 / 集火 / 我来解决」三格页。
+        ///
+        /// 原生轮盘按队伍分支（<c>UIExpression_Com_ChatMenu.ShowPlayerMenu</c>）：只有目标队伍与自己
+        /// 不同才走三格页，同队与自己是四格页（准备治疗 / 准备转账 / 准备发牌 / 技能）。三格页本身
+        /// 就在预制体里（<c>com_TabThree</c>），这里只是把控制器切过去并按原生的参数顺序重新绑定三个
+        /// 按钮，因此点击后走的是原生 onClick（原生协议 + 原生 CD）。
+        ///
+        /// 地面（40001~40004）与卡牌、筹码等其他标点菜单不碰：它们的 MarkTarget 不是玩家目标，
+        /// <see cref="ResolveMarkTargetId"/> 返回 0。
+        /// </summary>
+        private void ApplyWheelOverride(AttackNancyLuSettings settings)
+        {
+            try
+            {
+                var expression = SimpleSingletonProvider<UIManager>.inst?.expression;
+                if (expression == null || !expression.isShowing) return;
+                if (!(expression.contentPane is UIExpressionWindow window)) return;
+
+                var menu = window.com_ChatMenu;
+                if (menu == null || !menu.visible || menu.type == null) return;
+
+                long targetId = ResolveMarkTargetId(menu.MarkTarget);
+                long selfId = GetSelfPlayerId();
+
+                if (!WheelOverrideRules.ShouldRewrite(settings.OverrideWheel, menu.type.selectedIndex, targetId, selfId, settings.AllowSelfFocus))
+                {
+                    return;
+                }
+
+                menu.type.selectedIndex = WheelOverrideRules.ThreeSlotPageIndex;
+                WireThreeSlotPage(menu, targetId);
+            }
+            catch (Exception ex)
+            {
+                _logWarn?.Invoke("覆写标点轮盘失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>轮盘当前目标对应的玩家 ID；不是玩家标点菜单时返回 0。</summary>
+        private static long ResolveMarkTargetId(IMarkTarget target)
+        {
+            if (target is UIBattleInfo_Button_PlayerInfo playerButton)
+            {
+                return playerButton.PlayerData?.player?.Id ?? 0;
+            }
+            if (target is CharacterAnimator animator)
+            {
+                return animator.owner?.player?.Id ?? 0;
+            }
+            return 0;
+        }
+
+        private static long GetSelfPlayerId()
+        {
+            var self = SimpleSingletonProvider<GameLogicManager>.inst?.battle?.GetSelfPlayerData();
+            return self?.player?.Id ?? 0;
+        }
+
+        /// <summary>按原生敌方分支的参数顺序绑定三格页：Top=小心，Left=集火，Right=我来解决。</summary>
+        private void WireThreeSlotPage(UIExpression_Com_ChatMenu menu, long targetId)
+        {
+            var tab = menu.com_TabThree;
+            if (tab == null) return;
+
+            bool wired = true;
+            wired &= TryWireMenuItem(menu, tab.btn_Top, tab.image_Top, menu.image_Exclamation, MarkWarnId, targetId);
+            wired &= TryWireMenuItem(menu, tab.btn_Left, tab.image_Left, menu.image_Attack, MarkFocusId, targetId);
+            wired &= TryWireMenuItem(menu, tab.btn_Right, tab.image_Right, menu.image_Praise, MarkTackleId, targetId);
+
+            if (!wired && !_warnedWheelWiring)
+            {
+                _warnedWheelWiring = true;
+                _logWarn?.Invoke("覆写标点轮盘失败: 游戏 UI 结构已变化，本次保持原版轮盘");
+            }
+        }
+
+        private bool TryWireMenuItem(UIExpression_Com_ChatMenu menu, UIExpression_Button_MenuItem button, GImage highlight, GImage icon, int markId, long targetId)
+        {
+            if (button == null || icon == null) return false;
+
+            if (RefreshPlayerMenuItemMethod != null)
+            {
+                try
+                {
+                    RefreshPlayerMenuItemMethod.Invoke(menu, new object[] { button, highlight, icon.texture, markId, targetId });
+                    return true;
+                }
+                catch
+                {
+                    // 落到下面的公有 API 兜底实现。
+                }
+            }
+
+            return WireMenuItemFallback(menu, button, highlight, icon.texture, markId, targetId);
+        }
+
+        /// <summary>原生 RefreshItem + onClick + onRollOver 的等价实现，只用公有成员。</summary>
+        private static bool WireMenuItemFallback(UIExpression_Com_ChatMenu menu, UIExpression_Button_MenuItem button, GImage highlight, NTexture texture, int markId, long targetId)
+        {
+            try
+            {
+                if (button.loader_Icon == null || button.image_Hover == null || button.image_Frame == null) return false;
+
+                button.loader_Icon.texture = texture;
+                float rotation = (button.loader_Icon.rotation = 0f - button.rotation);
+                button.image_Frame.rotation = rotation;
+                button.image_Hover.rotation = rotation;
+                if (highlight != null) highlight.visible = false;
+
+                button.onRollOut.Set(() =>
+                {
+                    if (menu.showTip != null) menu.showTip.selectedIndex = 0;
+                    if (highlight != null) highlight.visible = false;
+                });
+
+                button.onRollOver.Set(() =>
+                {
+                    if (menu.com_Preview != null) menu.com_Preview.txt_Tip.text = BattlePlayerMarkMessage.GetMsg(markId, targetId);
+                    if (menu.showTip != null) menu.showTip.selectedIndex = 1;
+                    if (highlight != null) highlight.visible = true;
+                });
+
+                button.onClick.Set(() =>
+                {
+                    menu.touchable = false;
+                    menu.visible = false;
+                    var self = SimpleSingletonProvider<GameLogicManager>.inst?.battle?.GetSelfPlayerData();
+                    if (self?.player != null)
+                    {
+                        var message = new BattlePlayerMarkMessage(self, targetId, markId);
+                        SimpleSingletonProvider<GameLogicManager>.inst.communicate.RequestSendMessageC2S(message, markId);
+                    }
+                    menu.touchable = true;
+                });
+
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

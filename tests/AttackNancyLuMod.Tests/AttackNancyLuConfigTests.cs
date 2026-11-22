@@ -45,11 +45,13 @@ namespace AttackNancyLuMod.Tests
             Assert.True(obj.ContainsKey("screenRadius"), "config.json must have screenRadius");
             Assert.True(obj.ContainsKey("unlockPvpMark"), "config.json must have unlockPvpMark");
             Assert.True(obj.ContainsKey("allowSelfFocus"), "config.json must have allowSelfFocus");
+            Assert.True(obj.ContainsKey("overrideWheel"), "config.json must have overrideWheel");
+            Assert.False((bool)obj["overrideWheel"], "overrideWheel must default to false");
 
             var comments = obj["_comments"] as JObject;
             Assert.NotNull(comments);
 
-            string[] keys = { "enabled", "focusKey", "warnKey", "tackleKey", "screenRadius", "unlockPvpMark", "allowSelfFocus" };
+            string[] keys = { "enabled", "focusKey", "warnKey", "tackleKey", "screenRadius", "unlockPvpMark", "allowSelfFocus", "overrideWheel" };
             string[] langs = { "zh-Hans", "zh-Hant", "en", "ja" };
 
             foreach (var key in keys)
@@ -74,6 +76,42 @@ namespace AttackNancyLuMod.Tests
             Assert.Equal(100.0f, settings.ScreenRadius);
             Assert.True(settings.UnlockPvpMark);
             Assert.True(settings.AllowSelfFocus);
+            Assert.False(settings.OverrideWheel);
+        }
+
+        [Fact]
+        public void WheelOverrideRules_RequiresTheSwitch()
+        {
+            Assert.False(WheelOverrideRules.ShouldRewrite(false, 0, 42L, 1L, true));
+            Assert.False(WheelOverrideRules.ShouldRewrite(false, 0, 42L, 1L, false));
+        }
+
+        [Fact]
+        public void WheelOverrideRules_SkipsNativeThreeSlotPage()
+        {
+            Assert.False(WheelOverrideRules.ShouldRewrite(true, WheelOverrideRules.ThreeSlotPageIndex, 42L, 1L, true));
+        }
+
+        [Fact]
+        public void WheelOverrideRules_SkipsNonPlayerMenus()
+        {
+            // 地面 / 卡牌 / 筹码等标点菜单没有玩家 ID，必须原样放行。
+            Assert.False(WheelOverrideRules.ShouldRewrite(true, 0, 0L, 1L, true));
+        }
+
+        [Fact]
+        public void WheelOverrideRules_RewritesTeammatesAndSelf()
+        {
+            Assert.True(WheelOverrideRules.ShouldRewrite(true, 0, 42L, 1L, true));
+            Assert.True(WheelOverrideRules.ShouldRewrite(true, 0, 1L, 1L, true));
+        }
+
+        [Fact]
+        public void WheelOverrideRules_KeepsVanillaMenuForSelf_WhenSelfFocusDisabled()
+        {
+            Assert.False(WheelOverrideRules.ShouldRewrite(true, 0, 1L, 1L, false));
+            // 关掉集火自己不影响队友。
+            Assert.True(WheelOverrideRules.ShouldRewrite(true, 0, 42L, 1L, false));
         }
     }
 }

@@ -19,9 +19,9 @@ namespace AttackNancyLuMod
         private FocusController _controller;
 
         public override string Name => "集火南希露";
-        public override string Version => "1.0.0";
+        public override string Version => "1.1.0";
         public override string Author => "hpenguins";
-        public override string Description => "一键快捷集火鼠标指向的玩家或怪物，支持在战场 3D 模型与顶部 HUD 头像上秒发标点；同步解锁 PVP 模式标点系统。";
+        public override string Description => "一键快捷集火鼠标指向的玩家或怪物，支持在战场 3D 模型与顶部 HUD 头像上秒发标点；可解锁 PVP 标点系统，并可把原生标点轮盘的玩家页覆写为「小心/集火/我来解决」。";
 
         public override void OnInitialize()
         {
@@ -60,7 +60,8 @@ namespace AttackNancyLuMod
                 + ", tackleKey=" + _settings.TackleKey
                 + ", radius=" + _settings.ScreenRadius
                 + ", unlockPvp=" + _settings.UnlockPvpMark
-                + ", allowSelf=" + _settings.AllowSelfFocus;
+                + ", allowSelf=" + _settings.AllowSelfFocus
+                + ", overrideWheel=" + _settings.OverrideWheel;
         }
     }
 }

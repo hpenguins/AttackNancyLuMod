@@ -13,6 +13,7 @@ namespace AttackNancyLuMod
         public float ScreenRadius = 100.0f;
         public bool UnlockPvpMark = true;
         public bool AllowSelfFocus = true;
+        public bool OverrideWheel = false;
 
         public KeyCode ParsedFocusKey { get; private set; } = KeyCode.X;
         public KeyCode ParsedWarnKey { get; private set; } = KeyCode.None;
@@ -30,6 +31,7 @@ namespace AttackNancyLuMod
             value.ScreenRadius = (float)config.GetDouble("screenRadius", 100.0);
             value.UnlockPvpMark = config.GetBool("unlockPvpMark", true);
             value.AllowSelfFocus = config.GetBool("allowSelfFocus", true);
+            value.OverrideWheel = config.GetBool("overrideWheel", false);
 
             value.ParsedFocusKey = ParseKey(value.FocusKey, KeyCode.X);
             value.ParsedWarnKey = ParseKey(value.WarnKey, KeyCode.None);
@@ -50,6 +52,7 @@ namespace AttackNancyLuMod
             Add(config, "screenRadius", 100.0, ref added);
             Add(config, "unlockPvpMark", true, ref added);
             Add(config, "allowSelfFocus", true, ref added);
+            Add(config, "overrideWheel", false, ref added);
             if (added) config.SaveIfDirty();
         }
 

@@ -52,6 +52,12 @@ namespace AttackNancyLuMod
                 "Allow focusing yourself (default true): Allows focus-marking yourself when hovering over your own character or avatar.",
                 "自分自身への集火を許可（既定有効）：自身のアバターやキャラクターに合わせて押したときに自分への集火を送信できるようにします。"));
 
+            changed |= config.Describe("overrideWheel", D(
+                "覆写标点轮盘（默认关闭）：开启后，把游戏原生标点轮盘的玩家页改写成「小心 / 集火 / 我来解决」三条；关闭时保持原版（对队友只显示准备治疗 / 准备转账 / 准备发牌 / 技能）。地面与卡牌标点不受影响。",
+                "覆寫標點輪盤（預設關閉）：開啟後，把遊戲原生標點輪盤的玩家頁改寫成「小心 / 集火 / 我來解決」三條；關閉時保持原版（對隊友只顯示準備治療 / 準備轉帳 / 準備發牌 / 技能）。地面與卡牌標點不受影響。",
+                "Override the ping wheel (default false): Rewrites the player page of the vanilla ping wheel to 'Careful / Focus / I'll handle it'. When off, the vanilla content stays (teammates show heal / transfer / deal / skill). Ground and card pings are not affected.",
+                "標点ホイールを上書き（既定オフ）：オンにすると、ゲーム標準の標点ホイールのプレイヤーページを「警戒 / 集火 / 自分が対処」の 3 項目に書き換えます。オフのままなら従来どおり（味方には回復 / 送金 / 配布 / スキル）。地面とカードの標点には影響しません。"));
+
             return changed;
         }
 

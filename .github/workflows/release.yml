@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 env:
-  CESIUM_LOADER_REF: modloader-2.9.1
+  CESIUM_LOADER_REF: modloader-3.8.10
 
 jobs:
   build:
@@ -129,5 +129,6 @@ jobs:
             - 支持怪物、敌方玩家、友方队友以及自己。
             - 标点短语与头顶集火动画完全基于游戏原生标点协议，未安装模组的玩家也能正常看到。
             - 同步解锁 PVP 模式标点系统限制，支持在 PVP 派对中完整使用标点系统。
+            - 可选覆写原生标点轮盘：开启后玩家页改为「小心 / 集火 / 我来解决」，队友与自己也能直接点选。
             - 配置位于 `mods\AttackNancyLuMod\config.json`，也可在 AstralParty.Toys 的模组配置页修改。
             - 完整说明与配置项见仓库 [README](${{ github.server_url }}/${{ github.repository }}#readme)。
